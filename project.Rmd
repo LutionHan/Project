@@ -1,0 +1,69 @@
+---
+title: "Graduate Project"
+author: "Yichen Han"
+date: "2020/4/21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidymodels)
+library(tidyverse) 
+```
+
+# Data set and Question
+
+The data set contains information of cars. This data set is got from kaggle:https://www.kaggle.com/hellbuoy/car-price-prediction/data
+
+Goal: Predict the carprice using numerical predictors.
+
+```{r read in data}
+CarPrice<-read.csv("CarPrice_Assignment.csv")
+head(CarPrice)
+```
+
+> Here we wish to predict carprice using other numerical predictors. We wish to do variable selection so lasso is more preferred than ridge regression. We will first split the data into training set and test set, and then do a 5-fold cross validation on the training set to get a sense of chossing penalty coeficient.
+
+```{r fit model and tune}
+set.seed(77)
+lasso_spec <- linear_reg(penalty = tune(), mixture = 1) %>%
+  set_engine("glmnet")
+
+grid <- expand_grid(penalty = seq(0, 100, by = 1))
+
+CarPrice_split<-initial_split(CarPrice,prop=0.5)
+
+CarPrice_train<-training(CarPrice_split)
+
+CarPrice_test<-testing(CarPrice_split)
+
+CarPrice_train_cv<-vfold_cv(CarPrice_train,v=5)
+
+rec_lasso <- recipe(price ~ symboling+wheelbase+carlength+carwidth+carheight+curbweight+enginesize+boreratio+stroke+compressionratio+horsepower+peakrpm+citympg+highwaympg, data = CarPrice_train) %>%
+  step_scale(all_predictors())
+
+results_lasso <- tune_grid(lasso_spec,
+                     preprocessor = rec_lasso,
+                     grid = grid,
+                     resamples = CarPrice_train_cv)
+
+results_lasso %>%
+  collect_metrics() %>%
+  filter(.metric == "rmse") %>%
+  arrange(mean)
+```
+
+> It seems that penalty=83 gives us the smallest RMSE. Hence we will fit our lasso model using \lambda=83.
+
+```{r final model and evluation}
+final_spec <- linear_reg(penalty = 83, mixture = 1) %>%
+  set_engine("glmnet")
+
+fit <- last_fit(final_spec,
+                rec_lasso,
+                split = CarPrice_split)
+fit %>%
+  collect_metrics()
+```
+
+> We test our model on the test set and get a rsq=0.82, which means our model basically explain 82% of total variance.
